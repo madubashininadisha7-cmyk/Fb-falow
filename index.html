@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EarnFollow - Professional Reward System</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --p: #6366f1; --s: #22c55e; --d: #1e293b; --w: #ffffff; }
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; margin: 0; color: var(--d); }
+        .nav { background: var(--d); color: var(--w); padding: 15px; text-align: center; font-weight: bold; position: sticky; top:0; z-index:100; }
+        .container { max-width: 600px; margin: 20px auto; padding: 15px; }
+        .card { background: var(--w); padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); margin-bottom: 15px; }
+        .btn { padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; transition: 0.3s; margin-top: 10px; }
+        .btn-p { background: var(--p); color: var(--w); }
+        .btn-s { background: var(--s); color: var(--w); }
+        .btn-admin { background: #64748b; color: white; font-size: 12px; margin-top: 50px; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }
+        .hidden { display: none; }
+        .badge { background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 5px; font-size: 12px; }
+        .task-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 10px 0; }
+    </style>
+</head>
+<body>
+
+<div class="nav">EARN FOLLOW <span id="coin-disp" style="margin-left:20px; color:#fbbf24;">🪙 0</span></div>
+
+<div class="container">
+    <div id="step-admin-task" class="card">
+        <h3>මුලින්ම Admin ව Follow කරන්න</h3>
+        <button class="btn btn-p" onclick="doAdminTask('fb', 'https://facebook.com/yourpage')">Facebook Page (Admin)</button>
+        <button class="btn btn-p" style="background:#000" onclick="doAdminTask('tt', 'https://tiktok.com/@yourprofile')">TikTok Account (Admin)</button>
+        <p id="admin-msg" style="color:red; font-size:12px; text-align:center;">ලින්ක් 2ම ක්ලික් කර Register වෙන්න.</p>
+    </div>
+
+    <div id="step-auth" class="card hidden">
+        <h3>Register / Login</h3>
+        <input type="text" id="uName" placeholder="ඔබේ නම">
+        <input type="email" id="uEmail" placeholder="ඊමේල් ලිපිනය">
+        <button class="btn btn-s" onclick="handleLogin()">ඇතුල් වන්න</button>
+    </div>
+
+    <div id="step-dash" class="hidden">
+        <div class="card">
+            <h4>ඔබේ ලින්ක්ස් යාවත්කාලීන කරන්න</h4>
+            <input type="url" id="uFbLink" placeholder="Facebook Profile Link">
+            <input type="url" id="uTtLink" placeholder="TikTok Profile Link">
+            <button class="btn btn-p" onclick="saveMyLinks()">Update Links</button>
+        </div>
+
+        <h3>Followers උපයන්න (Task Wall)</h3>
+        <div id="user-wall" class="card">Loading tasks...</div>
+    </div>
+
+    <div id="step-proof" class="card hidden">
+        <h3>සාක්ෂි ඉදිරිපත් කරන්න (Proof)</h3>
+        <p>ඔබ මෙම ගිණුම Follow කළ බවට Screenshot එකක් ලබා දෙන්න.</p>
+        <input type="file" id="proofImg" accept="image/*">
+        <button class="btn btn-s" onclick="submitProof()">Upload & Earn Coins</button>
+        <button class="btn" onclick="showTab('dash')">Cancel</button>
+    </div>
+
+    <div id="step-admin-panel" class="card hidden">
+        <h2 style="color:red">Admin Panel</h2>
+        <div id="admin-pending-tasks">No pending tasks.</div>
+        <button class="btn" onclick="showTab('dash')">Back to Dashboard</button>
+    </div>
+
+    <button class="btn btn-admin" onclick="checkAdmin()">Admin Login</button>
+</div>
+
+<script>
+const SB_URL = "https://bawqnkxvhhrdbmyonaxq.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhd3Fua3h2aGhyZGJteW9uYXhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MjExMzksImV4cCI6MjA4NzA5NzEzOX0.SIfyDoZNbB5ua9whNfsP2eWQL-P7oafiCl_XMC3F7bU";
+const supabase = supabase.createClient(SB_URL, SB_KEY);
+
+let user = null;
+let targetTaskEmail = null;
+let adminTasks = { fb: false, tt: false };
+
+// --- Navigation ---
+function showTab(tab) {
+    const tabs = ['step-admin-task', 'step-auth', 'step-dash', 'step-proof', 'step-admin-panel'];
+    tabs.forEach(t => document.getElementById(t).classList.add('hidden'));
+    document.getElementById('step-' + tab).classList.remove('hidden');
+}
+
+// --- Admin Follow Logic ---
+function doAdminTask(p, url) {
+    window.open(url, '_blank');
+    adminTasks[p] = true;
+    if(adminTasks.fb && adminTasks.tt) showTab('auth');
+}
+
+// --- Auth & Daily Bonus ---
+async function handleLogin() {
+    const name = document.getElementById('uName').value;
+    const email = document.getElementById('uEmail').value;
+    if(!name || !email) return alert("Fill details");
+
+    const { data } = await supabase.from('profiles').upsert({ full_name: name, email: email }, { onConflict: 'email' }).select();
+    if(data) {
+        user = data[0];
+        document.getElementById('coin-disp').innerText = "🪙 " + (user.coins || 50);
+        checkDaily();
+        showTab('dash');
+        loadWall();
+    }
+}
+
+async function checkDaily() {
+    const today = new Date().toISOString().split('T')[0];
+    if(user.last_login !== today) {
+        const newCoins = (user.coins || 0) + 10;
+        await supabase.from('profiles').update({ coins: newCoins, last_login: today }).eq('id', user.id);
+        alert("Daily Bonus 🪙 10 added!");
+        document.getElementById('coin-disp').innerText = "🪙 " + newCoins;
+    }
+}
+
+// --- Task Wall ---
+async function loadWall() {
+    const { data } = await supabase.from('profiles').select('*').neq('email', user.email).limit(10);
+    let html = '';
+    data.forEach(u => {
+        html += `<div class="task-item">
+            <span><b>${u.full_name}</b> (5 Coins)</span>
+            <button class="btn-p" style="padding:5px 10px; width:auto;" onclick="startTask('${u.fb_link || u.tiktok_link}', '${u.email}')">Follow</button>
+        </div>`;
+    });
+    document.getElementById('user-wall').innerHTML = html || "No users found.";
+}
+
+function startTask(link, email) {
+    if(!link || link === 'null') return alert("No link provided by user.");
+    window.open(link, '_blank');
+    targetTaskEmail = email;
+    showTab('proof');
+}
+
+// --- Proof Upload ---
+async function submitProof() {
+    const file = document.getElementById('proofImg').files[0];
+    if(!file) return alert("Please select a screenshot");
+
+    const fileName = `${Date.now()}_${user.email}.png`;
+    const { data, error } = await supabase.storage.from('proofs').upload(fileName, file);
+
+    if(data) {
+        const { data: urlData } = supabase.storage.from('proofs').getPublicUrl(fileName);
+        await supabase.from('user_tasks').insert({
+            sender_email: user.email,
+            receiver_email: targetTaskEmail,
+            proof_url: urlData.publicUrl
+        });
+        alert("Proof submitted! Admin will verify soon.");
+        showTab('dash');
+    } else {
+        alert("Upload failed: " + error.message);
+    }
+}
+
+// --- Admin Panel Logic ---
+function checkAdmin() {
+    const pass = prompt("Enter Admin Password:");
+    if(pass === "admin123") {
+        showTab('admin-panel');
+        loadPendingTasks();
+    }
+}
+
+async function loadPendingTasks() {
+    const { data } = await supabase.from('user_tasks').select('*').eq('status', 'pending');
+    let html = '<h4>Pending Verifications</h4>';
+    data.forEach(t => {
+        html += `<div class="card">
+            <p>From: ${t.sender_email}</p>
+            <a href="${t.proof_url}" target="_blank">View Screenshot</a><br>
+            <button class="btn-s" onclick="approveTask('${t.id}', '${t.sender_email}', ${t.amount})">Approve</button>
+        </div>`;
+    });
+    document.getElementById('admin-pending-tasks').innerHTML = html || "No pending tasks.";
+}
+
+async function approveTask(id, email, amount) {
+    // 1. Update status
+    await supabase.from('user_tasks').update({ status: 'approved' }).eq('id', id);
+    // 2. Add coins to user
+    const { data } = await supabase.from('profiles').select('coins').eq('email', email).single();
+    await supabase.from('profiles').update({ coins: data.coins + amount }).eq('email', email);
+    
+    alert("Approved!");
+    loadPendingTasks();
+}
+
+async function saveMyLinks() {
+    const fb = document.getElementById('uFbLink').value;
+    const tt = document.getElementById('uTtLink').value;
+    await supabase.from('profiles').update({ fb_link: fb, tiktok_link: tt }).eq('email', user.email);
+    alert("Links Saved!");
+}
+</script>
+
+</body>
+</html>
